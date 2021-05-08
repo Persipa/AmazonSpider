@@ -4,10 +4,15 @@ import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
+import site.persipa.amazonspider.constant.Constants;
+import site.persipa.amazonspider.enums.UserAgentEnum;
+import site.persipa.amazonspider.utils.JsoupUtil;
 import site.persipa.amazonspider.vo.Book;
 
 import java.io.IOException;
+import java.net.URI;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,14 +25,64 @@ import java.util.stream.Collectors;
 public class MainController {
 
     public List<Book> getBookList(String url) throws IOException {
-        url = "https://www.amazon.cn/s?rh=n%3A2334070071&fs=true";
+        url = "https://www.amazon.cn/s?rh=n%3A" + url + "&fs=true";
+        Document document = JsoupUtil.getDocument(url);
+
+        // 该活动的书有多少页
+        Element pageBar = document.getElementsByClass("a-pagination").first();
+        String pageStr = pageBar.getElementsByTag("li").last().previousElementSibling().text();
+        int pages = Integer.parseInt(pageStr);
+        System.out.println("There are " + pages + " pages");
+
+        List<Book> bookList = new ArrayList<>();
+        for (int i = 1; i < pages; i++) {
+            url = url + "&page=" + i;
+            List<Book> tmpList = parseDocument(JsoupUtil.getDocument(url));
+            bookList.addAll(tmpList);
+            try {
+                Thread.sleep(2000L);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+        bookList = bookList.stream()
+                .distinct().collect(Collectors.toList());
+
+        return bookList;
+    }
+
+    public Map<String,String> getNavbarUrl() throws IOException {
+        String url = "https://www.amazon.cn/Kindle%E7%94%B5%E5%AD%90%E4%B9%A6/b/node=116169071";
         Document document = Jsoup.connect(url)
-                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36 Edg/90.0.818.51")
-                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9")
-                .header("Host", "www.amazon.cn")
+                .userAgent(UserAgentEnum.randomUA())
+                .headers(Constants.header)
                 .get();
-        String title = document.title();
-        System.out.println(title);
+        Element tagElement = document.getElementById("cc-lm-tcgShowContainer");
+        Elements imageElements = tagElement.getElementsByClass("cc-lm-tcgImgItem");
+        List<String> hrefList = imageElements.stream()
+                .map(e -> e.getElementsByTag("a").attr("href"))
+                .map(URI::create)
+                .map(URI::getQuery)
+                .map(q -> Arrays.stream(q.split("&"))
+                        .filter(s -> s.startsWith("node="))
+                        .map(s -> s.substring(s.indexOf("=") + 1))
+                        .findFirst()
+                        .orElse(""))
+                .collect(Collectors.toList());
+
+        List<String> titleList = tagElement.getElementById("cc-lm-navItems")
+                .getElementsByTag("li")
+                .stream().map(Element::text)
+                .collect(Collectors.toList());
+        Map<String, String> map = new HashMap<>(titleList.size());
+        for (int i = 0; i < titleList.size() - 1; i++) {
+            map.put(titleList.get(i), hrefList.get(i));
+        }
+        map.forEach((k, v) -> System.out.println(k + "===>" + v));
+        return map;
+    }
+
+    private List<Book> parseDocument(Document document) {
         Elements elements = document.getElementsByAttributeValue("data-component-type", "s-search-result");
         List<Book> list = new ArrayList<>();
         for (Element element : elements) {
@@ -36,13 +91,11 @@ public class MainController {
             Element content = sgRowElements.get(1);
             Elements imageElement = content.getElementsByAttributeValue("data-component-type", "s-product-image");
             Elements imageHref = imageElement.first().getElementsByTag("img").first().getElementsByAttribute("href");
-            System.out.println("--------------------");
-            System.out.println(element);
-            Element h2 = content.getElementsByTag("h2").first();
-            String bookName = h2.text();
-            String bookHref = h2.getElementsByTag("a").first().attr("href");
 
-            String author = h2.nextElementSibling().text();
+            Element bookTitle = content.getElementsByTag("h2").first();
+            String bookName = bookTitle.text();
+            String bookHref = bookTitle.getElementsByTag("a").first().attr("href");
+            String author = bookTitle.nextElementSibling().text();
 
             // 原价
             Element priceElement = content.getElementsByClass("sg-row").last();
@@ -51,7 +104,7 @@ public class MainController {
             String priceFraction = priceElement.getElementsByClass("a-price-fraction").text();
             String price = priceSymbol + priceWhole + priceFraction;
 
-            // 限时折扣价格
+            // todo 限时折扣价格 可能不准
             String discountPrice = priceElement.getElementsByClass("a-color-secondary").first().text();
 
             Book book = new Book(bookName, bookHref, author, price, discountPrice);
@@ -59,30 +112,6 @@ public class MainController {
         }
 
         return list;
-    }
-
-    public void getNavbarUrl() throws IOException {
-        String url = "https://www.amazon.cn/Kindle%E7%94%B5%E5%AD%90%E4%B9%A6/b/node=116169071";
-        Document document = Jsoup.connect(url)
-                .userAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.93 Safari/537.36 Edg/90.0.818.51")
-                .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9")
-                .header("Host", "www.amazon.cn")
-                .get();
-        Element tagElement = document.getElementById("cc-lm-tcgShowContainer");
-        Elements imageElements = tagElement.getElementsByClass("cc-lm-tcgImgItem");
-        List<String> hrefList = imageElements.stream()
-                .map(e -> e.getElementsByTag("a").attr("href"))
-                .collect(Collectors.toList());
-
-        List<String> titleList = tagElement.getElementById("cc-lm-navItems")
-                .getElementsByTag("li")
-                .stream().map(Element::text)
-                .collect(Collectors.toList());
-        Map<String, String> map = new HashMap<>();
-        for (int i = 0; i < titleList.size()-1; i++) {
-            map.put(titleList.get(i), hrefList.get(i));
-        }
-        map.forEach((k,v)->System.out.println(k+"===>"+v));
     }
 
 }
