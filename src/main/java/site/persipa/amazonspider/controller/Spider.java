@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
  * @author xukunhuang
  * @since 2021/5/4
  */
-public class MainController {
+public class Spider {
 
     public List<Book> getBookList(String url) throws IOException {
         url = "https://www.amazon.cn/s?rh=n%3A" + url + "&fs=true";
@@ -51,7 +51,7 @@ public class MainController {
         return bookList;
     }
 
-    public Map<String,String> getNavbarUrl() throws IOException {
+    public Map<Integer, String> getNavbarUrl() throws IOException {
         String url = "https://www.amazon.cn/Kindle%E7%94%B5%E5%AD%90%E4%B9%A6/b/node=116169071";
         Document document = Jsoup.connect(url)
                 .userAgent(UserAgentEnum.randomUA())
@@ -74,11 +74,13 @@ public class MainController {
                 .getElementsByTag("li")
                 .stream().map(Element::text)
                 .collect(Collectors.toList());
-        Map<String, String> map = new HashMap<>(titleList.size());
+        Map<Integer, String> map = new HashMap<>(titleList.size());
         for (int i = 0; i < titleList.size() - 1; i++) {
-            map.put(titleList.get(i), hrefList.get(i));
+            String title = titleList.get(i);
+            String value = hrefList.get(i);
+            map.put(i, value);
+            System.out.println("(" + i + ") " + title + "==>" + value);
         }
-        map.forEach((k, v) -> System.out.println(k + "===>" + v));
         return map;
     }
 
